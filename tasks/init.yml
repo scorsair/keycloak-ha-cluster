@@ -1,0 +1,21 @@
+- block:
+  - name: Setup Firewalld services
+    become: yes
+    firewalld:
+      service: "{{ item }}"
+      permanent: yes
+      immediate: yes
+      state: enabled
+    with_items: "{{ keycloak.firewalld_services }}"
+    when: firewalld_enabled
+  - name: Setup Firewalld ports
+    become: yes
+    firewalld:
+      port: "{{ item }}"
+      permanent: yes
+      immediate: yes
+      state: enabled
+    with_items: "{{ keycloak.firewalld_ports }}"
+    when: firewalld_enabled
+  tags:
+    - init

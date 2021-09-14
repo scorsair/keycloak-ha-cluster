@@ -1,0 +1,26 @@
+vrrp_script check_nginx {
+    script "pgrep nginx"
+    interval 3
+    weight 25
+    fall 2
+    rise 3
+}
+
+
+vrrp_instance oidc {
+    state {{ keepalived_state }}
+    interface {{ ansible_default_ipv4.interface }}
+    virtual_router_id 250
+    priority {{ keepalived_priority }}
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{ keycloak.keepalived.password }}
+    }
+    virtual_ipaddress {
+        {{ keycloak.keepalived.virtual_ip }}
+    }
+    track_script {
+       check_nginx
+    }
+}

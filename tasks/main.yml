@@ -1,0 +1,228 @@
+---
+- name: etcd_master_hosts
+  add_host:
+    name: '{{ item }}'
+    groups: etcd_master
+  with_items: "{{ groups['keycloak'] }}"
+
+- name: etcd_hosts
+  add_host:
+    name: '{{ item }}'
+    groups: etcd
+  with_items: "{{ groups['keycloak'] }}"
+
+- include_tasks: init.yml
+
+- name: ETCD Role
+  include_role:
+    name: andrewrothstein.etcd-cluster
+  vars:
+    etcd_cluster_name: keycloak
+    etcd_secure: False
+  ignore_errors: no
+
+- shell: "/bin/sleep 15"
+
+- name: Patroni Role
+  include_role:
+    name: kostiantyn-nemchenko.patroni
+  vars:
+    patroni_replication_password: "LBP6RtL4BX6Ln56f" 
+    patroni_superuser_password: "YZAwQskxr9XEZWGG"
+    patroni_postgresql_pg_hba:
+     - { type: "local", database: "all", user: "all", address: "", method: "trust" }
+     - { type: "host", database: "all", user: "all", address: "127.0.0.1/32", method: "trust" }
+     - { type: "host", database: "keycloak", user: "keycloak", address: "0.0.0.0/0", method: "md5" }
+     - { type: "host", database: "replication", user: "replicator", address: "0.0.0.0/0", method: "md5" }
+  ignore_errors: no
+
+- shell: "/bin/sleep 15"
+
+- package:
+    name: "python-psycopg2"
+    state: present
+
+- name: Create Keycloak database user
+  postgresql_user:
+    name: keycloak
+    password: "{{ keycloak.pgsql.db_password }}"
+    role_attr_flags: "LOGIN"
+    expires: infinity
+  ignore_errors: yes
+
+- name: Create Keycloak database
+  postgresql_db:
+    name: keycloak
+    owner: keycloak
+    encoding: UTF-8
+  ignore_errors: yes
+
+- name: Install the NGINX package
+  package:
+    name: "java-1.8.0-openjdk-headless"
+    state: present
+
+- name: Config Sysctl
+  template:
+    src: keycloak-sysctl.conf.j2
+    dest: /etc/sysctl.d/keycloak.conf
+    mode: '0644'
+  notify:
+    - apply-sysctl-rules
+
+- name: Check the release directory exists
+  ansible.builtin.stat:
+    path: "/opt/keycloak-{{ keycloak.version }}"
+  register: keycloak_release_dir
+
+- name: "Download Keycloak release {{ keycloak.version }}"
+  get_url:
+    url: "https://github.com/keycloak/keycloak/releases/download/{{ keycloak.version }}/keycloak-{{ keycloak.version }}.tar.gz"
+    dest: /opt/
+  when: not keycloak_release_dir.stat.exists
+
+### USER/GROUP ###
+- name: Ensure group "keycloak" exists
+  group:
+    name: keycloak
+    state: present
+
+- name: Add "keycloak" user
+  user:
+    name: keycloak
+    group: keycloak
+    system: true
+    create_home: false
+    home: /opt/keycloak
+
+### DOWNLOAD AND UNPACK RELEASE ###
+- name: "Extract Keycloak release {{ keycloak.version }}"
+  unarchive:
+    src: "https://github.com/keycloak/keycloak/releases/download/{{ keycloak.version }}/keycloak-{{ keycloak.version }}.tar.gz"
+    dest: /opt/
+    remote_src: yes
+    creates: "/opt/keycloak-{{ keycloak.version }}"
+    owner: keycloak
+    group: keycloak
+  register: keycloak_release_dir
+
+- name: "Create a symbolic link to the current release {{ keycloak.version }}"
+  file:
+    src: "/opt/keycloak-{{ keycloak.version }}"
+    dest: /opt/keycloak
+    state: link
+    owner: keycloak
+    group: keycloak
+
+### DOWNLOAD AND CONFIG PGSQL DRIVER ###
+- name: DOWNLOAD AND CONFIG PGSQL DRIVER
+  become_user: keycloak
+  block:
+  - name: Create a directory for Postgresql JDBC module
+    file:
+      path: /opt/keycloak/modules/system/layers/keycloak/org/postgresql/main
+      state: directory
+      mode: '0755'
+
+  - name: Download Postgresql JDBC module
+    get_url:
+      url: "https://jdbc.postgresql.org/download/postgresql-{{ keycloak.pgsql.module_version }}.jar"
+      dest: /opt/keycloak/modules/system/layers/keycloak/org/postgresql/main/
+
+  - name: Generate module.xml for Postgresql JDBC module
+    template:
+      src: postgresql.module.xml.j2
+      dest: /opt/keycloak/modules/system/layers/keycloak/org/postgresql/main/module.xml
+      mode: '0644'
+
+### CONFIGURE KEYCLOAK ###
+- name: CONFIGURE KEYCLOAK
+  become_user: keycloak
+  block:
+  - name: standalone-ha.xml
+    template:
+      src: standalone-ha.xml.j2
+      dest: /opt/keycloak/standalone/configuration/standalone-ha.xml
+      mode: '0644'
+
+  - name: Check an init admin user exists
+    ansible.builtin.stat:
+      path: "/opt/keycloak/standalone/configuration/keycloak-add-user.json"
+    register: keycloak_admin_user_json
+
+  - name: Create an inin admin user
+    shell: "/opt/keycloak/bin/add-user-keycloak.sh -r master -u {{ keycloak.admin.user }} -p {{ keycloak.admin.password }}"
+    when: not keycloak_admin_user_json.stat.exists
+
+### INSTALL KEYCLOAK SERVICE ###
+- block: 
+  - name: Install Keycloak defaults config
+    template:
+      src: keycloak-defaults.j2
+      dest: /etc/default/keycloak
+      mode: '0644'
+      owner: keycloak
+      group: keycloak
+
+  - name: Install Keycloak service
+    template:
+      src: keycloak.service.j2
+      dest: /etc/systemd/system/keycloak.service
+      mode: '0644'
+      owner: keycloak
+      group: keycloak
+  notify:
+    - keycloak-systemd
+
+
+- name: Install the Keepalived package
+  package:
+    name: "keepalived"
+    state: present
+
+- name: Generate Keepalived configuration
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    mode: '0644'
+  notify:
+    - keepalived-systemd
+
+- name: Install the NGINX package
+  package:
+    name: "nginx"
+    state: present
+
+- name: Setup Firewalld rules
+  firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    immediate: yes
+    state: enabled
+  with_items:
+    - http
+    - https
+
+- name: Create a directory for SSL certificates
+  file:
+    path: /etc/nginx/ssl
+    state: directory
+    mode: '0755'
+
+- block:
+  - name: Copy SSL certificates to NGINX directory
+    copy:
+      src: "{{ item }}"
+      dest: /etc/nginx/ssl/
+      mode: 0644
+    with_items:
+      - tls.key
+      - tls.crt
+
+  - name: Generate NGINX configuration
+    template:
+      src: nginx.conf.j2
+      dest: /etc/nginx/nginx.conf
+      mode: '0644'
+  notify:
+    - nginx-systemd

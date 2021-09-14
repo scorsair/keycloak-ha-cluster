@@ -1,0 +1,23 @@
+[Unit]
+Description=Keycloak
+After=network.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=idle
+User=keycloak
+Group=keycloak
+EnvironmentFile=/etc/default/keycloak
+ExecStart=/opt/keycloak/bin/standalone.sh $KEYCLOAK_PARAMS
+Restart=always
+RestartSec=60
+StartLimitInterval=60
+StartLimitBurst=3
+LimitNOFILE=65536
+TimeoutStartSec=600
+TimeoutStopSec=600
+
+
+[Install]
+WantedBy=multi-user.target
