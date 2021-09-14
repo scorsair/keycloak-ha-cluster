@@ -39,7 +39,7 @@ Playbook:
 - hosts: keycloak
   become: yes
   roles:
-    - role: scorsair.keycloak-ha-cluster
+    - role: scorsair.keycloak_ha_cluster
       keycloak.keepalived.virtual_ip: "192.168.1.5"
 ```
 
