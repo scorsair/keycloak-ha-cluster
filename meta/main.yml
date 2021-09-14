@@ -1,4 +1,6 @@
+---
 galaxy_info:
+  role_name: keycloak_ha_cluster
   author: Stanislav Garifullin
   description: Ansible role for deploying Keycloak HA cluster
   company: ""
@@ -9,8 +11,6 @@ galaxy_info:
   - keycloak
   - availability
   - failover
-  license:
-  - MIT
   platforms:
   - name: EL
     versions:

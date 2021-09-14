@@ -21,8 +21,6 @@
     etcd_secure: False
   ignore_errors: no
 
-- shell: "/bin/sleep 15"
-
 - name: Patroni Role
   include_role:
     name: kostiantyn-nemchenko.patroni
@@ -36,9 +34,8 @@
      - { type: "host", database: "replication", user: "replicator", address: "0.0.0.0/0", method: "md5" }
   ignore_errors: no
 
-- shell: "/bin/sleep 15"
-
-- package:
+- name: Install Ansible required dependencies 
+  package:
     name: "python-psycopg2"
     state: present
 
@@ -151,7 +148,7 @@
     register: keycloak_admin_user_json
 
   - name: Create an inin admin user
-    shell: "/opt/keycloak/bin/add-user-keycloak.sh -r master -u {{ keycloak.admin.user }} -p {{ keycloak.admin.password }}"
+    command: "/opt/keycloak/bin/add-user-keycloak.sh -r master -u {{ keycloak.admin.user }} -p {{ keycloak.admin.password }}"
     when: not keycloak_admin_user_json.stat.exists
 
 ### INSTALL KEYCLOAK SERVICE ###

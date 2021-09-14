@@ -1,6 +1,6 @@
 ---
 - name: apply-sysctl-rules
-  shell: "sysctl --system" 
+  command: "sysctl --system" 
 
 - name: keycloak-systemd
   systemd: name=keycloak state=restarted daemon_reload=yes enabled=yes
