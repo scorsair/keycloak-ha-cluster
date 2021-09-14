@@ -16,10 +16,10 @@ galaxy_info:
     versions:
     - 7
     - 8
-dependencies: []
+dependencies:
   - role: andrewrothstein.etcd-cluster
     version: v2.0.0
-    when: role_mock is defined
+    when: ansible_facts['os_family'] == 'Mock'
   - role: kostiantyn-nemchenko.patroni
     version: v1.2.0
-    when: role_mock is defined
+    when: ansible_facts['os_family'] == 'Mock'
